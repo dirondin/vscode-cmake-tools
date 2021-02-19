@@ -1,7 +1,6 @@
 import {CMakeTools} from '@cmt/cmake-tools';
 import {Kit, scanForKits} from '@cmt/kit';
 import {clearExistingKitConfigurationFile, DefaultEnvironment, expect} from '@test/util';
-import {ITestCallbackContext} from 'mocha';
 import * as path from 'path';
 
 interface KitEnvironment {
@@ -205,7 +204,7 @@ function makeExtensionTestSuite(name: string,
   suite(name, () => {
     const context = {buildSystem: expectedBuildSystem} as CMakeContext;
 
-    suiteSetup(async function(this: Mocha.IHookCallbackContext) {
+    suiteSetup(async function(this: Mocha.Context) {
       this.timeout(100000);
       context.testEnv = new DefaultEnvironment('test/extension-tests/successful-build/project-folder',
                                                'build',
@@ -223,11 +222,11 @@ function makeExtensionTestSuite(name: string,
       // No rescan of the tools is needed
       // No new kit selection is needed
       await clearExistingKitConfigurationFile();
-      context.kits = await scanForKits();
+      context.kits = await scanForKits(context.cmt);
       skipTestIf({kitIsNotAvailable: true}, this, context);
     });
 
-    setup(async function(this: Mocha.IBeforeAndAfterContext) {
+    setup(async function(this: Mocha.Context) {
       this.timeout(10000);
       context.cmt = await CMakeTools.create(context.testEnv.vsContext, context.testEnv.wsContext);
       const kit = context.kits.find(k => expectedBuildSystem.defaultKit.test(k.name));
@@ -237,7 +236,7 @@ function makeExtensionTestSuite(name: string,
       context.testEnv.projectFolder.buildDirectory.clear();
     });
 
-    teardown(async function(this: Mocha.IBeforeAndAfterContext) {
+    teardown(async function(this: Mocha.Context) {
       this.timeout(100000);
       await context.cmt.asyncDispose();
       context.testEnv.clean();
@@ -262,7 +261,7 @@ KITS_BY_PLATFORM[workername].forEach(buildSystem => {
 
     // This test is only valid for kits which have at least one preferred generator defined.
     test(`Use preferred generator from kit file (${buildSystem.defaultKit})`,
-         async function(this: ITestCallbackContext) {
+         async function(this: Mocha.Context) {
            skipTestIf({preferredGeneratorIsNotAvailable: true}, this, context);
            this.timeout(BUILD_TIMEOUT);
 
@@ -274,7 +273,7 @@ KITS_BY_PLATFORM[workername].forEach(buildSystem => {
          });
 
     test(`Use preferred generator from settings file (${buildSystem.defaultKit})`,
-         async function(this: ITestCallbackContext) {
+         async function(this: Mocha.Context) {
            this.timeout(BUILD_TIMEOUT);
 
            context.testEnv.config.updatePartial({
@@ -298,7 +297,7 @@ KITS_BY_PLATFORM[workername].forEach(buildSystem => {
     // This test is NOT valid for kits which have any preferred generator defined
     // since we expect CMT to reject the build.
     test(`Reject invalid preferred generator in settings file (${buildSystem.defaultKit})`,
-         async function(this: ITestCallbackContext) {
+         async function(this: Mocha.Context) {
            skipTestIf({preferredGeneratorIsAvailable: true}, this, context);
            this.timeout(BUILD_TIMEOUT);
 
@@ -310,23 +309,30 @@ KITS_BY_PLATFORM[workername].forEach(buildSystem => {
                .to.be.contains('Unable to determine what CMake generator to use.');
          });
 
-    // This test is NOT valid for kits which have any preferred generator defined
-    // since we expect CMT to reject the build.
-    test(`Reject if all \'preferredGenerators\' fields are empty (${buildSystem.defaultKit})`,
-         async function(this: ITestCallbackContext) {
+    // This test verifies that kits without any preferred generator defined
+    // are still able to pick one preferred generator from the default list
+    // (Ninja + Unix Makefiles)
+    test(`Select default if all \'preferredGenerators\' fields are empty (${buildSystem.defaultKit})`,
+         async function(this: Mocha.Context) {
            skipTestIf({preferredGeneratorIsAvailable: true}, this, context);
            this.timeout(BUILD_TIMEOUT);
-
            context.testEnv.config.updatePartial({preferredGenerators: []});
-           await expect(context.cmt.build()).to.eventually.be.rejected;
+           expect(await context.cmt.build()).to.eql(0);
 
-           expect(context.testEnv.errorMessagesQueue.length).to.gte(1);
-           expect(context.testEnv.errorMessagesQueue[0])
-               .to.be.contains('Unable to determine what CMake generator to use.');
+           const result = await context.testEnv.result.getResultAsJson();
+           // "Ninja" and "Unix Makefiles" are always the default preferred generators
+           // if no other overriding property is set.
+           // The extension verifies for each if they are present (installed)
+           // and starts with "Ninja".
+           const isNinjaInstalled = await context.cmt.isNinjaInstalled();
+           expect(result['cmake-generator']).to.eql(isNinjaInstalled ? "Ninja" : "Unix Makefiles");
+
+           expect(context.testEnv.errorMessagesQueue.length)
+               .to.eql(0, 'Wrong message ' + context.testEnv.errorMessagesQueue[0]);
          });
 
     test(`Use preferred generator from settings or kit file (${buildSystem.defaultKit})`,
-         async function(this: ITestCallbackContext) {
+         async function(this: Mocha.Context) {
            this.timeout(BUILD_TIMEOUT);
 
            context.testEnv.config.updatePartial({preferredGenerators: ['Unix Makefiles', 'MinGW Makefiles']});

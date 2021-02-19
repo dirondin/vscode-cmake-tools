@@ -1,6 +1,6 @@
 import * as api from '@cmt/api';
 import {CMakeCache} from '@cmt/cache';
-import {CMakeTools} from '@cmt/cmake-tools';
+import {CMakeTools, ConfigureTrigger} from '@cmt/cmake-tools';
 import {readKitsFile, kitsForWorkspaceDirectory, USER_KITS_FILEPATH} from '@cmt/kit';
 import {platformNormalizePath} from '@cmt/util';
 import {DefaultEnvironment, expect} from '@test/util';
@@ -9,7 +9,7 @@ suite('[Toolchain Substitution]', async () => {
   let cmt: CMakeTools;
   let testEnv: DefaultEnvironment;
 
-  setup(async function(this: Mocha.IBeforeAndAfterContext) {
+  setup(async function(this: Mocha.Context) {
     this.timeout(100000);
     if (process.platform === 'win32')
       this.skip();
@@ -30,7 +30,7 @@ suite('[Toolchain Substitution]', async () => {
     testEnv.projectFolder.buildDirectory.clear();
   });
 
-  teardown(async function(this: Mocha.IBeforeAndAfterContext) {
+  teardown(async function(this: Mocha.Context) {
     this.timeout(30000);
     await cmt.asyncDispose();
     testEnv.teardown();
@@ -38,7 +38,7 @@ suite('[Toolchain Substitution]', async () => {
 
   test('Check substitution within toolchain kits', async () => {
     // Configure
-    expect(await cmt.configure()).to.be.eq(0, '[toolchain] configure failed');
+    expect(await cmt.configureInternal(ConfigureTrigger.runTests)).to.be.eq(0, '[toolchain] configure failed');
     expect(testEnv.projectFolder.buildDirectory.isCMakeCachePresent).to.eql(true, 'expected cache not present');
     const cache = await CMakeCache.fromPath(await cmt.cachePath);
 
